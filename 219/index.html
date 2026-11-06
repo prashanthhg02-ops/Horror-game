@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Quiet Below</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      background: #080909;
+      color: #e8e4dc;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(ellipse at 50% 45%, #18201d 0, #0d1110 42%, #060707 100%);
+    }
+
+    .game-shell {
+      width: min(100vw, 1000px);
+      padding: 18px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 16px;
+      margin: 0 0 12px;
+    }
+
+    h1 {
+      margin: 0;
+      color: #d7d0c4;
+      font-size: clamp(20px, 4vw, 30px);
+      font-weight: 500;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+    }
+
+    .subtitle {
+      margin: 6px 0 0;
+      color: #818981;
+      font-size: 12px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .hud {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      color: #a7ada5;
+      font-size: 12px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .meter {
+      width: 110px;
+      height: 7px;
+      margin-top: 5px;
+      overflow: hidden;
+      border: 1px solid #525b50;
+      background: #111512;
+    }
+
+    .meter-fill {
+      width: 100%;
+      height: 100%;
+      background: #a6a55d;
+      transition: width .15s linear;
+    }
+
+    .game-frame {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #333a34;
+      box-shadow: 0 20px 70px #000b, 0 0 40px #29372a22;
+      background: #111512;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      image-rendering: pixelated;
+      cursor: crosshair;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: #050706d9;
+      text-align: center;
+    }
+
+    .overlay.hidden { display: none; }
+
+    .card { max-width: 470px; }
+
+    .eyebrow {
+      color: #a2a568;
+      font-size: 11px;
+      letter-spacing: .3em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 12px 0;
+      color: #e1ddd2;
+      font-size: clamp(30px, 7vw, 56px);
+      font-weight: 400;
+      letter-spacing: .08em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+
+    .story {
+      color: #a9ada5;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .controls {
+      margin: 18px 0 22px;
+      color: #777f76;
+      font-size: 12px;
+      line-height: 1.8;
+      letter-spacing: .06em;
+    }
+
+    button {
+      border: 1px solid #a2a568;
+      padding: 12px 25px;
+      background: #a2a568;
+      color: #10130f;
+      font: inherit;
+      font-size: 12px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    button:hover, button:focus-visible {
+      outline: 2px solid #ddd7a0;
+      outline-offset: 3px;
+      background: #c1c37c;
+    }
+
+    .message {
+      min-height: 22px;
+      margin: 10px 0 0;
+      color: #8c9389;
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    @media (max-width: 600px) {
+      .game-shell { padding: 10px; }
+      header { align-items: start; flex-direction: column; }
+      .hud { width: 100%; justify-content: space-between; }
+    }
+  </style>
+</head>
+<body>
+  <main class="game-shell">
+    <header>
+      <div>
+        <h1>The Quiet Below</h1>
+        <p class="subtitle">An abandoned place remembers you</p>
+      </div>
+      <div class="hud" aria-live="polite">
+        <div>Flashlight<div class="meter"><div id="battery" class="meter-fill"></div></div></div>
+        <div id="keys">Keys: 0 / 3</div>
+      </div>
+    </header>
+
+    <section class="game-frame" aria-label="The Quiet Below game">
+      <canvas id="game" width="1120" height="600" aria-label="Top-down horror escape game"></canvas>
+      <div id="overlay" class="overlay">
+        <div class="card">
+          <div class="eyebrow">Something is listening</div>
+          <h2 id="overlay-title">The Quiet Below</h2>
+          <p id="overlay-story" class="story">You woke beneath the old sanatorium. Find three keys, then reach the green exit. Keep your light alive. Whatever is in the dark knows you are here.</p>
+          <p class="controls">MOVE: WASD / ARROW KEYS &nbsp; · &nbsp; SPRINT: SHIFT<br>FLASHLIGHT: F &nbsp; · &nbsp; FIND BATTERIES &nbsp; · &nbsp; DON'T LET IT CATCH YOU</p>
+          <button id="start-button" type="button">Enter the dark</button>
+        </div>
+      </div>
+    </section>
+    <p id="message" class="message">The building is quiet. For now.</p>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.querySelector("#game");
+      const ctx = canvas.getContext("2d");
+      const overlay = document.querySelector("#overlay");
+      const overlayTitle = document.querySelector("#overlay-title");
+      const overlayStory = document.querySelector("#overlay-story");
+      const startButton = document.querySelector("#start-button");
+      const batteryBar = document.querySelector("#battery");
+      const keyDisplay = document.querySelector("#keys");
+      const message = document.querySelector("#message");
+
+      const tile = 40;
+      const map = [
+        "########################",
+        "#P....#........#.......#",
+        "#.##..#.####...#.###.#..#",
+        "#....##....#...#...#.#..#",
+        "###.....##.#.#####.#.####",
+        "#...##.....#.....#.#....#",
+        "#.#.###########..#.####.#",
+        "#.#.......#......#......#",
+        "#.#####.#.#.##########..#",
+        "#.....#.#.#....#.........#",
+        "###.#.#.#.####.#.#####.#..#",
+        "#...#...#......#.....#.#..#",
+        "#.#######.##########.#.####",
+        "#..........................#",
+        "########################"
+      ];
+
+      const world = {
+        width: 0,
+        height: map.length * tile,
+        walls: [],
+        floor: [],
+        keys: [],
+        batteries: [],
+        exit: { x: 0, y: 0 },
+        start: { x: 0, y: 0 }
+      };
+
+      function buildWorld() {
+        world.width = Math.max(...map.map(row => row.length)) * tile;
+        canvas.width = world.width;
+        world.walls = [];
+        world.floor = [];
+        world.keys = [];
+        world.batteries = [];
+        map.forEach((row, y) => {
+          for (let x = 0; x < world.width / tile; x++) {
+            const cell = row[x] || "#";
+            const rect = { x: x * tile, y: y * tile, w: tile, h: tile };
+            if (cell === "#") world.walls.push(rect);
+            else {
+              world.floor.push(rect);
+              if (cell === "P") world.start = { x: rect.x + tile / 2, y: rect.y + tile / 2 };
+            }
+          }
+        });
+
+        world.exit = { x: 25 * tile + tile / 2, y: 13 * tile + tile / 2 };
+        const keySpots = [[3, 3], [16, 5], [2, 11]];
+        const batterySpots = [[10, 1], [20, 7], [9, 12]];
+        world.keys = keySpots.map(([x, y], i) => ({ x: x * tile + 20, y: y * tile + 20, found: false, id: i }));
+        world.batteries = batterySpots.map(([x, y], i) => ({ x: x * tile + 20, y: y * tile + 20, found: false, id: i }));
+      }
+
+      const keysDown = new Set();
+      let player;
+      let monster;
+      let state = "title";
+      let lastTime = 0;
+      let elapsed = 0;
+      let flicker = 0;
+      let messageTimer = 0;
+
+      function resetGame() {
+        player = {
+          x: world.start.x,
+          y: world.start.y,
+          radius: 11,
+          speed: 145,
+          battery: 100,
+          flashlight: true,
+          angle: 0
+        };
+        monster = {
+          x: world.exit.x - tile * 2,
+          y: world.exit.y - tile * 2,
+          radius: 14,
+          speed: 58,
+          alert: false,
+          stun: 0,
+          roamTarget: null,
+          roamTimer: 0
+        };
+        world.keys.forEach(item => item.found = false);
+        world.batteries.forEach(item => item.found = false);
+        elapsed = 0;
+        flicker = 0;
+        setMessage("The building is quiet. For now.");
+        updateHud();
+      }
+
+      function setMessage(text, duration = 2.4) {
+        message.textContent = text;
+        messageTimer = duration;
+      }
+
+      function updateHud() {
+        batteryBar.style.width = `${Math.max(0, player.battery)}%`;
+        batteryBar.style.background = player.battery < 25 ? "#a65448" : "#a6a55d";
+        const count = world.keys.filter(item => item.found).length;
+        keyDisplay.textContent = `Keys: ${count} / 3`;
+      }
+
+      function circleRectCollision(x, y, radius, rect) {
+        const nearX = Math.max(rect.x, Math.min(x, rect.x + rect.w));
+        const nearY = Math.max(rect.y, Math.min(y, rect.y + rect.h));
+        const dx = x - nearX;
+        const dy = y - nearY;
+        return dx * dx + dy * dy < radius * radius;
+      }
+
+      function canOccupy(x, y, radius) {
+        if (x < radius || y < radius || x > world.width - radius || y > world.height - radius) return false;
+        return !world.walls.some(wall => circleRectCollision(x, y, radius, wall));
+      }
+
+      function moveEntity(entity, dx, dy) {
+        const nextX = entity.x + dx;
+        if (canOccupy(nextX, entity.y, entity.radius)) entity.x = nextX;
+        const nextY = entity.y + dy;
+        if (canOccupy(entity.x, nextY, entity.radius)) entity.y = nextY;
+      }
+
+      function hasLineOfSight(x1, y1, x2, y2) {
+        const distance = Math.hypot(x2 - x1, y2 - y1);
+        const steps = Math.ceil(distance / 12);
+        for (let i = 1; i < steps; i++) {
+          const x = x1 + (x2 - x1) * i / steps;
+          const y = y1 + (y2 - y1) * i / steps;
+          if (world.walls.some(wall => x >= wall.x && x <= wall.x + wall.w && y >= wall.y && y <= wall.y + wall.h)) return false;
+        }
+        return true;
+      }
+
+      function update(dt) {
+        if (state !== "playing") return;
+        elapsed += dt;
+        if (messageTimer > 0) {
+          messageTimer -= dt;
+          if (messageTimer <= 0) setMessage(" ");
+        }
+
+        let dx = 0;
+        let dy = 0;
+        if (keysDown.has("w") || keysDown.has("arrowup")) dy -= 1;
+        if (keysDown.has("s") || keysDown.has("arrowdown")) dy += 1;
+        if (keysDown.has("a") || keysDown.has("arrowleft")) dx -= 1;
+        if (keysDown.has("d") || keysDown.has("arrowright")) dx += 1;
+        const moving = dx !== 0 || dy !== 0;
+        if (moving) {
+          const length = Math.hypot(dx, dy);
+          dx /= length;
+          dy /= length;
+          player.angle = Math.atan2(dy, dx);
+          const sprinting = keysDown.has("shift") && player.battery > 0;
+          const speed = player.speed * (sprinting ? 1.55 : 1);
+          moveEntity(player, dx * speed * dt, dy * speed * dt);
+          if (sprinting) player.battery = Math.max(0, player.battery - dt * 5);
+        }
+
+        if (player.flashlight && player.battery > 0) {
+          player.battery = Math.max(0, player.battery - dt * 1.15);
+          if (player.battery <= 0) {
+            player.flashlight = false;
+            setMessage("The flashlight died.");
+          }
+        }
+
+        const distanceToPlayer = Math.hypot(player.x - monster.x, player.y - monster.y);
+        const seesPlayer = distanceToPlayer < 330 && hasLineOfSight(monster.x, monster.y, player.x, player.y);
+        if (seesPlayer) {
+          monster.alert = true;
+          monster.roamTarget = null;
+        }
+
+        if (monster.stun > 0) {
+          monster.stun -= dt;
+        } else if (monster.alert) {
+          const angle = Math.atan2(player.y - monster.y, player.x - monster.x);
+          const speed = monster.speed * (distanceToPlayer < 150 ? 1.2 : 1);
+          moveEntity(monster, Math.cos(angle) * speed * dt, Math.sin(angle) * speed * dt);
+          if (distanceToPlayer > 470 && !seesPlayer) monster.alert = false;
+        } else {
+          monster.roamTimer -= dt;
+          if (!monster.roamTarget || monster.roamTimer <= 0 || Math.hypot(monster.roamTarget.x - monster.x, monster.roamTarget.y - monster.y) < 14) {
+            const floor = world.floor[Math.floor(Math.random() * world.floor.length)];
+            monster.roamTarget = { x: floor.x + tile / 2, y: floor.y + tile / 2 };
+            monster.roamTimer = 3 + Math.random() * 3;
+          }
+          const angle = Math.atan2(monster.roamTarget.y - monster.y, monster.roamTarget.x - monster.x);
+          moveEntity(monster, Math.cos(angle) * monster.speed * .42 * dt, Math.sin(angle) * monster.speed * .42 * dt);
+        }
+
+        if (player.flashlight && player.battery > 0 && distanceToPlayer < 205 &&
+          Math.abs(angleDifference(Math.atan2(monster.y - player.y, monster.x - player.x), player.angle)) < .62 &&
+          hasLineOfSight(player.x, player.y, monster.x, monster.y)) {
+          monster.stun = Math.max(monster.stun, .18);
+        }
+
+        for (const key of world.keys) {
+          if (!key.found && Math.hypot(player.x - key.x, player.y - key.y) < 25) {
+            key.found = true;
+            setMessage("A cold iron key. It wasn't here before.");
+            updateHud();
+          }
+        }
+        for (const battery of world.batteries) {
+          if (!battery.found && Math.hypot(player.x - battery.x, player.y - battery.y) < 25) {
+            battery.found = true;
+            player.battery = Math.min(100, player.battery + 38);
+            setMessage("Batteries. A little more time.");
+            updateHud();
+          }
+        }
+
+        if (distanceToPlayer < player.radius + monster.radius - 2) {
+          finish(false);
+          return;
+        }
+        if (Math.hypot(player.x - world.exit.x, player.y - world.exit.y) < 24) {
+          const count = world.keys.filter(item => item.found).length;
+          if (count === 3) finish(true);
+          else setMessage("The exit is locked. Find all three keys.", .05);
+        }
+
+        updateHud();
+      }
+
+      function angleDifference(a, b) {
+        return Math.atan2(Math.sin(a - b), Math.cos(a - b));
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#141a16";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        for (const cell of world.floor) {
+          ctx.fillStyle = ((cell.x / tile + cell.y / tile) % 2 === 0) ? "#1b211c" : "#181e19";
+          ctx.fillRect(cell.x, cell.y, tile, tile);
+          ctx.strokeStyle = "#222922";
+          ctx.strokeRect(cell.x + .5, cell.y + .5, tile - 1, tile - 1);
+        }
+
+        for (const wall of world.walls) {
+          ctx.fillStyle = "#303832";
+          ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+          ctx.fillStyle = "#3a443c";
+          ctx.fillRect(wall.x + 2, wall.y + 2, wall.w - 4, 3);
+          ctx.fillStyle = "#242b26";
+          ctx.fillRect(wall.x + 3, wall.y + wall.h - 5, wall.w - 6, 3);
+        }
+
+        ctx.fillStyle = world.keys.every(key => key.found) ? "#73895b" : "#354033";
+        ctx.fillRect(world.exit.x - 12, world.exit.y - 17, 24, 34);
+        ctx.fillStyle = "#101510";
+        ctx.fillRect(world.exit.x - 7, world.exit.y - 12, 14, 24);
+        ctx.fillStyle = "#bab88a";
+        ctx.beginPath();
+        ctx.arc(world.exit.x + 4, world.exit.y, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        for (const key of world.keys) {
+          if (key.found) continue;
+          ctx.save();
+          ctx.translate(key.x, key.y);
+          ctx.rotate(Math.PI / 4);
+          ctx.fillStyle = "#c4a765";
+          ctx.fillRect(-6, -6, 12, 12);
+          ctx.restore();
+          ctx.fillStyle = "#e7d79c";
+          ctx.beginPath();
+          ctx.arc(key.x, key.y, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        for (const battery of world.batteries) {
+          if (battery.found) continue;
+          ctx.fillStyle = "#738f65";
+          ctx.fillRect(battery.x - 6, battery.y - 8, 12, 16);
+          ctx.fillStyle = "#b5d17f";
+          ctx.fillRect(battery.x - 3, battery.y - 4, 6, 8);
+        }
+
+        drawMonster();
+        drawPlayer();
+        drawDarkness();
+        drawGrain();
+      }
+
+      function drawMonster() {
+        const distance = Math.hypot(player.x - monster.x, player.y - monster.y);
+        if (distance > 360 && !monster.alert) return;
+        ctx.save();
+        ctx.translate(monster.x, monster.y);
+        const pulse = 1 + Math.sin(elapsed * 5) * .06;
+        ctx.scale(pulse, pulse);
+        ctx.fillStyle = monster.stun > 0 ? "#677554" : "#090b0a";
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 14, 19, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = monster.stun > 0 ? "#c8d38b" : "#b84438";
+        ctx.fillRect(-7, -5, 4, 2);
+        ctx.fillRect(3, -5, 4, 2);
+        ctx.restore();
+      }
+
+      function drawPlayer() {
+        ctx.save();
+        ctx.translate(player.x, player.y);
+        ctx.rotate(player.angle);
+        ctx.fillStyle = "#d1c9a9";
+        ctx.beginPath();
+        ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#f3e7bb";
+        ctx.fillRect(5, -2, 8, 4);
+        ctx.restore();
+      }
+
+      function drawDarkness() {
+        const lowBattery = player.battery < 15;
+        if (lowBattery) flicker += .06;
+        const radius = player.flashlight && player.battery > 0
+          ? 178 + Math.sin(elapsed * 7) * (lowBattery ? 18 : 3)
+          : 75;
+
+        ctx.save();
+        ctx.fillStyle = `rgba(0, 0, 0, ${player.flashlight && player.battery > 0 ? .91 : .97})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.globalCompositeOperation = "destination-out";
+
+        const glow = ctx.createRadialGradient(player.x, player.y, 25, player.x, player.y, radius);
+        glow.addColorStop(0, "rgba(0,0,0,1)");
+        glow.addColorStop(.68, "rgba(0,0,0,.8)");
+        glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (player.flashlight && player.battery > 0) {
+          const cone = ctx.createRadialGradient(player.x, player.y, 10, player.x, player.y, 310);
+          cone.addColorStop(0, "rgba(0,0,0,.92)");
+          cone.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = cone;
+          ctx.beginPath();
+          ctx.moveTo(player.x, player.y);
+          ctx.arc(player.x, player.y, 310, player.angle - .58, player.angle + .58);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        ctx.restore();
+        if (lowBattery && Math.sin(flicker) > .84) {
+          ctx.fillStyle = "#030504";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+
+      function drawGrain() {
+        ctx.save();
+        ctx.globalAlpha = .12;
+        for (let i = 0; i < 180; i++) {
+          const x = Math.random() * canvas.width;
+          const y = Math.random() * canvas.height;
+          ctx.fillStyle = Math.random() > .5 ? "#d4d3bd" : "#000";
+          ctx.fillRect(x, y, 1.5, 1.5);
+        }
+        ctx.restore();
+      }
+
+      function finish(won) {
+        state = won ? "won" : "lost";
+        overlay.classList.remove("hidden");
+        overlayTitle.textContent = won ? "You made it out" : "It found you";
+        overlayStory.textContent = won
+          ? "The lock turns. Cold air rushes in. Behind you, something whispers your name."
+          : "The last thing you hear is the flashlight hitting the floor. The dark is quiet again.";
+        startButton.textContent = "Play again";
+      }
+
+      function frame(time) {
+        const dt = Math.min((time - lastTime) / 1000 || 0, .05);
+        lastTime = time;
+        update(dt);
+        draw();
+        requestAnimationFrame(frame);
+      }
+
+      startButton.addEventListener("click", () => {
+        resetGame();
+        state = "playing";
+        overlay.classList.add("hidden");
+      });
+
+      window.addEventListener("keydown", event => {
+        const key = event.key.toLowerCase();
+        if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) event.preventDefault();
+        keysDown.add(key);
+        if (key === "f" && state === "playing" && player.battery > 0) {
+          player.flashlight = !player.flashlight;
+          setMessage(player.flashlight ? "The beam cuts through the dark." : "You lower the light.");
+        }
+      });
+      window.addEventListener("keyup", event => keysDown.delete(event.key.toLowerCase()));
+      window.addEventListener("blur", () => keysDown.clear());
+
+      buildWorld();
+      resetGame();
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
